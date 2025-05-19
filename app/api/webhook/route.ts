@@ -41,20 +41,19 @@ export async function POST(req: Request) {
   await connectToDatabase();
 
   const data = evt.data as Record<string, any>;
+
   const id = data?.id;
   const email = data?.email_addresses?.[0]?.email_address || "unknown@example.com";
+  const image_url = data?.image_url || "";
   const first_name = data?.first_name || "";
   const last_name = data?.last_name || "";
-  const image_url = data?.image_url || "";
   const usernameFromClerk = data?.username;
 
-  // ✅ fallback username logic (never null)
-  const fallbackUsername =
-    usernameFromClerk && usernameFromClerk !== "null"
-      ? usernameFromClerk
-      : `${first_name}${last_name}`.toLowerCase() || `user${Math.floor(Math.random() * 10000)}`;
+  // ✅ guaranteed fallback username (required by schema)
+  const fallbackUsername = usernameFromClerk?.trim()
+    || `${first_name}${last_name}`.trim().toLowerCase()
+    || `user${Math.floor(Math.random() * 100000)}`;
 
-  // ❗️ If still no ID or username — exit
   if (!id || !fallbackUsername) {
     return new Response("Missing required user data", { status: 400 });
   }
@@ -70,7 +69,7 @@ export async function POST(req: Request) {
       });
 
       return NextResponse.json({ message: "User created", user });
-    } catch {
+    } catch (err) {
       return new Response("Failed to create user", { status: 500 });
     }
   }

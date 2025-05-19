@@ -23,7 +23,7 @@ export async function POST(req: Request) {
 
   let evt: WebhookEvent;
   let eventType: string;
-  
+
   try {
     evt = wh.verify(payload, {
       "svix-id": svix_id,
@@ -32,13 +32,9 @@ export async function POST(req: Request) {
     }) as WebhookEvent;
 
     eventType = evt.type;
-  } catch (err) {
-    console.error("❌ Webhook verification failed:", err);
+  } catch {
     return new Response("Invalid signature", { status: 400 });
   }
-
-  console.log("📦 Webhook Event:", eventType);
-  console.log("🧠 Payload:", evt.data);
 
   await connectToDatabase();
 
@@ -52,12 +48,11 @@ export async function POST(req: Request) {
     username = null
   } = data;
 
-  // 👇 Prevent crashing on null value
-  const fallbackUsername = username ?? `${first_name}${last_name}`.toLowerCase() || `user${Math.floor(Math.random() * 10000)}`;
+  const fallbackUsername =
+    username ?? `${first_name}${last_name}`.toLowerCase() || `user${Math.floor(Math.random() * 10000)}`;
   const email = email_addresses?.[0]?.email_address || "unknown@example.com";
 
   if (eventType === "user.created") {
-    console.log("🚀 Creating user in Mongo...");
     try {
       const user = await createUser({
         clerkId: id,
@@ -67,16 +62,13 @@ export async function POST(req: Request) {
         picture: image_url || "",
       });
 
-      console.log("✅ User saved:", user);
       return NextResponse.json({ message: "User created", user });
-    } catch (err) {
-      console.error("❌ Error saving user:", err);
+    } catch {
       return new Response("Error creating user", { status: 500 });
     }
   }
 
   if (eventType === "user.updated") {
-    console.log("✏️ Updating user...");
     try {
       const updated = await updateUser({
         clerkId: id,
@@ -89,22 +81,17 @@ export async function POST(req: Request) {
         path: `/profile/${id}`,
       });
 
-      console.log("✅ User updated:", updated);
       return NextResponse.json({ message: "User updated", updated });
-    } catch (err) {
-      console.error("❌ Error updating user:", err);
+    } catch {
       return new Response("Error updating user", { status: 500 });
     }
   }
 
   if (eventType === "user.deleted") {
-    console.log("🗑️ Deleting user...");
     try {
       const deleted = await deleteUser({ clerkId: id });
-      console.log("✅ User deleted:", deleted);
       return NextResponse.json({ message: "User deleted", deleted });
-    } catch (err) {
-      console.error("❌ Error deleting user:", err);
+    } catch {
       return new Response("Error deleting user", { status: 500 });
     }
   }

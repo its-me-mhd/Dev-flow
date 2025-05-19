@@ -23,7 +23,7 @@ export async function POST(req: Request) {
 
   let evt: WebhookEvent;
   let eventType: string;
-
+  
   try {
     evt = wh.verify(payload, {
       "svix-id": svix_id,
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
     username = null
   } = data;
 
-  // 👇 Prevent crashing on null values
+  // 👇 Prevent crashing on null value
   const fallbackUsername = username ?? `${first_name}${last_name}`.toLowerCase() || `user${Math.floor(Math.random() * 10000)}`;
   const email = email_addresses?.[0]?.email_address || "unknown@example.com";
 

@@ -7,8 +7,10 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
+
   if (!WEBHOOK_SECRET) {
-    throw new Error("Missing WEBHOOK_SECRET from Clerk Dashboard");
+    console.error("❌ WEBHOOK_SECRET missing in env");
+    return new Response("Webhook secret missing", { status: 500 });
   }
 
   const headerPayload = headers();
@@ -33,13 +35,16 @@ export async function POST(req: Request) {
       "svix-signature": svix_signature,
     }) as WebhookEvent;
 
-    eventType = evt.type; 
+    eventType = evt.type;
   } catch (err) {
-    console.error("Webhook verification failed:", err);
-    return new Response("Invalid webhook signature", { status: 400 });
+    console.error("❌ Webhook signature verification failed:", err);
+    return new Response("Invalid signature", { status: 400 });
   }
 
-  const data = evt.data as Record<string, any>;
+  console.log("📦 Webhook event received:", eventType);
+  console.log("🔍 Payload:", evt.data);
+
+  await connectToDatabase();
 
   const {
     id,
@@ -47,42 +52,56 @@ export async function POST(req: Request) {
     image_url,
     first_name = "",
     last_name = "",
-    username = "unknown",
-  } = data;
-
-  await connectToDatabase();
+    username = "unknown"
+  } = evt.data as Record<string, any>;
 
   if (eventType === "user.created") {
-    const mongoUser = await createUser({
-      clerkId: id,
-      name: first_name && last_name ? `${first_name} ${last_name}` : username,
-      email: email_addresses[0].email_address,
-      username,
-      picture: image_url,
-    });
-
-    return NextResponse.json({ message: "User created", user: mongoUser });
-  }
-
-  if (eventType === "user.updated") {
-    const mongoUser = await updateUser({
-      clerkId: id,
-      updateData: {
+    try {
+      const user = await createUser({
+        clerkId: id,
         name: first_name && last_name ? `${first_name} ${last_name}` : username,
         email: email_addresses[0].email_address,
         username,
-        picture: image_url,
-      },
-      path: `/profile/${id}`,
-    });
+        picture: image_url
+      });
+      console.log("✅ User created in DB:", user);
+      return NextResponse.json({ status: 200, user });
+    } catch (err) {
+      console.error("❌ Failed to create user:", err);
+      return new Response("Failed to create user", { status: 500 });
+    }
+  }
 
-    return NextResponse.json({ message: "User updated", user: mongoUser });
+  if (eventType === "user.updated") {
+    try {
+      const updated = await updateUser({
+        clerkId: id,
+        updateData: {
+          name: first_name && last_name ? `${first_name} ${last_name}` : username,
+          email: email_addresses[0].email_address,
+          username,
+          picture: image_url
+        },
+        path: `/profile/${id}`
+      });
+      console.log("✅ User updated in DB:", updated);
+      return NextResponse.json({ status: 200, updated });
+    } catch (err) {
+      console.error("❌ Failed to update user:", err);
+      return new Response("Failed to update user", { status: 500 });
+    }
   }
 
   if (eventType === "user.deleted") {
-    const deletedUser = await deleteUser({ clerkId: id! });
-    return NextResponse.json({ message: "User deleted", user: deletedUser });
+    try {
+      const deleted = await deleteUser({ clerkId: id });
+      console.log("✅ User deleted from DB:", deleted);
+      return NextResponse.json({ status: 200, deleted });
+    } catch (err) {
+      console.error("❌ Failed to delete user:", err);
+      return new Response("Failed to delete user", { status: 500 });
+    }
   }
 
-  return new Response("Unhandled event type", { status: 200 });
+  return new Response("Unhandled event", { status: 200 });
 }

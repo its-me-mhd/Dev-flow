@@ -7,7 +7,9 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
-  if (!WEBHOOK_SECRET) return new Response("Missing webhook secret", { status: 500 });
+  if (!WEBHOOK_SECRET) {
+    return new Response("Missing Clerk webhook secret", { status: 500 });
+  }
 
   const headerPayload = headers();
   const svix_id = headerPayload.get("svix-id");
@@ -15,7 +17,7 @@ export async function POST(req: Request) {
   const svix_signature = headerPayload.get("svix-signature");
 
   if (!svix_id || !svix_timestamp || !svix_signature) {
-    return new Response("Missing svix headers", { status: 400 });
+    return new Response("Missing Svix headers", { status: 400 });
   }
 
   const payload = await req.text();
@@ -33,24 +35,29 @@ export async function POST(req: Request) {
 
     eventType = evt.type;
   } catch {
-    return new Response("Invalid signature", { status: 400 });
+    return new Response("Invalid webhook signature", { status: 400 });
   }
 
   await connectToDatabase();
 
   const data = evt.data as Record<string, any>;
-  const {
-    id,
-    email_addresses,
-    image_url,
-    first_name = "",
-    last_name = "",
-    username = null
-  } = data;
+  const id = data?.id;
+  const email = data?.email_addresses?.[0]?.email_address || "unknown@example.com";
+  const first_name = data?.first_name || "";
+  const last_name = data?.last_name || "";
+  const image_url = data?.image_url || "";
+  const usernameFromClerk = data?.username;
 
+  // ✅ fallback username logic (never null)
   const fallbackUsername =
-    username ?? `${first_name}${last_name}`.toLowerCase() || `user${Math.floor(Math.random() * 10000)}`;
-  const email = email_addresses?.[0]?.email_address || "unknown@example.com";
+    usernameFromClerk && usernameFromClerk !== "null"
+      ? usernameFromClerk
+      : `${first_name}${last_name}`.toLowerCase() || `user${Math.floor(Math.random() * 10000)}`;
+
+  // ❗️ If still no ID or username — exit
+  if (!id || !fallbackUsername) {
+    return new Response("Missing required user data", { status: 400 });
+  }
 
   if (eventType === "user.created") {
     try {
@@ -59,12 +66,12 @@ export async function POST(req: Request) {
         name: `${first_name} ${last_name}`.trim() || fallbackUsername,
         email,
         username: fallbackUsername,
-        picture: image_url || "",
+        picture: image_url,
       });
 
       return NextResponse.json({ message: "User created", user });
     } catch {
-      return new Response("Error creating user", { status: 500 });
+      return new Response("Failed to create user", { status: 500 });
     }
   }
 
@@ -83,7 +90,7 @@ export async function POST(req: Request) {
 
       return NextResponse.json({ message: "User updated", updated });
     } catch {
-      return new Response("Error updating user", { status: 500 });
+      return new Response("Failed to update user", { status: 500 });
     }
   }
 
@@ -92,7 +99,7 @@ export async function POST(req: Request) {
       const deleted = await deleteUser({ clerkId: id });
       return NextResponse.json({ message: "User deleted", deleted });
     } catch {
-      return new Response("Error deleting user", { status: 500 });
+      return new Response("Failed to delete user", { status: 500 });
     }
   }
 

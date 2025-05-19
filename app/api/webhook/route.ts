@@ -7,11 +7,7 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
-
-  if (!WEBHOOK_SECRET) {
-    console.error("❌ WEBHOOK_SECRET missing in env");
-    return new Response("Webhook secret missing", { status: 500 });
-  }
+  if (!WEBHOOK_SECRET) return new Response("Missing webhook secret", { status: 500 });
 
   const headerPayload = headers();
   const svix_id = headerPayload.get("svix-id");
@@ -19,7 +15,7 @@ export async function POST(req: Request) {
   const svix_signature = headerPayload.get("svix-signature");
 
   if (!svix_id || !svix_timestamp || !svix_signature) {
-    return new Response("Missing Svix headers", { status: 400 });
+    return new Response("Missing svix headers", { status: 400 });
   }
 
   const payload = await req.text();
@@ -37,71 +33,81 @@ export async function POST(req: Request) {
 
     eventType = evt.type;
   } catch (err) {
-    console.error("❌ Webhook signature verification failed:", err);
+    console.error("❌ Webhook verification failed:", err);
     return new Response("Invalid signature", { status: 400 });
   }
 
-  console.log("📦 Webhook event received:", eventType);
-  console.log("🔍 Payload:", evt.data);
+  console.log("📦 Webhook Event:", eventType);
+  console.log("🧠 Payload:", evt.data);
 
   await connectToDatabase();
 
+  const data = evt.data as Record<string, any>;
   const {
     id,
     email_addresses,
     image_url,
     first_name = "",
     last_name = "",
-    username = "unknown"
-  } = evt.data as Record<string, any>;
+    username = null
+  } = data;
+
+  // 👇 Prevent crashing on null values
+  const fallbackUsername = username ?? `${first_name}${last_name}`.toLowerCase() || `user${Math.floor(Math.random() * 10000)}`;
+  const email = email_addresses?.[0]?.email_address || "unknown@example.com";
 
   if (eventType === "user.created") {
+    console.log("🚀 Creating user in Mongo...");
     try {
       const user = await createUser({
         clerkId: id,
-        name: first_name && last_name ? `${first_name} ${last_name}` : username,
-        email: email_addresses[0].email_address,
-        username,
-        picture: image_url
+        name: `${first_name} ${last_name}`.trim() || fallbackUsername,
+        email,
+        username: fallbackUsername,
+        picture: image_url || "",
       });
-      console.log("✅ User created in DB:", user);
-      return NextResponse.json({ status: 200, user });
+
+      console.log("✅ User saved:", user);
+      return NextResponse.json({ message: "User created", user });
     } catch (err) {
-      console.error("❌ Failed to create user:", err);
-      return new Response("Failed to create user", { status: 500 });
+      console.error("❌ Error saving user:", err);
+      return new Response("Error creating user", { status: 500 });
     }
   }
 
   if (eventType === "user.updated") {
+    console.log("✏️ Updating user...");
     try {
       const updated = await updateUser({
         clerkId: id,
         updateData: {
-          name: first_name && last_name ? `${first_name} ${last_name}` : username,
-          email: email_addresses[0].email_address,
-          username,
-          picture: image_url
+          name: `${first_name} ${last_name}`.trim() || fallbackUsername,
+          email,
+          username: fallbackUsername,
+          picture: image_url,
         },
-        path: `/profile/${id}`
+        path: `/profile/${id}`,
       });
-      console.log("✅ User updated in DB:", updated);
-      return NextResponse.json({ status: 200, updated });
+
+      console.log("✅ User updated:", updated);
+      return NextResponse.json({ message: "User updated", updated });
     } catch (err) {
-      console.error("❌ Failed to update user:", err);
-      return new Response("Failed to update user", { status: 500 });
+      console.error("❌ Error updating user:", err);
+      return new Response("Error updating user", { status: 500 });
     }
   }
 
   if (eventType === "user.deleted") {
+    console.log("🗑️ Deleting user...");
     try {
       const deleted = await deleteUser({ clerkId: id });
-      console.log("✅ User deleted from DB:", deleted);
-      return NextResponse.json({ status: 200, deleted });
+      console.log("✅ User deleted:", deleted);
+      return NextResponse.json({ message: "User deleted", deleted });
     } catch (err) {
-      console.error("❌ Failed to delete user:", err);
-      return new Response("Failed to delete user", { status: 500 });
+      console.error("❌ Error deleting user:", err);
+      return new Response("Error deleting user", { status: 500 });
     }
   }
 
-  return new Response("Unhandled event", { status: 200 });
+  return new Response("Event handled", { status: 200 });
 }

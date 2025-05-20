@@ -64,10 +64,10 @@ export async function POST(req: Request) {
         clerkId: id,
         email,
         username: fallbackUsername,
-        firstName: first_name,
-        lastName: last_name,
-        photo: image_url,
+        name: `${first_name} ${last_name}`.trim(),
+        picture: image_url,
       });
+
 
       return new Response("User created successfully", { status: 200 });
     } catch (err) {

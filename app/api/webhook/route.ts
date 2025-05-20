@@ -49,10 +49,10 @@ export async function POST(req: Request) {
   const last_name = data?.last_name || "";
   const usernameFromClerk = data?.username;
 
-  // ✅ guaranteed fallback username (required by schema)
-  const fallbackUsername = usernameFromClerk?.trim()
-    || `${first_name}${last_name}`.trim().toLowerCase()
-    || `user${Math.floor(Math.random() * 100000)}`;
+  const fallbackUsername =
+    usernameFromClerk?.trim() ||
+    `${first_name}${last_name}`.trim().toLowerCase() ||
+    `user${Math.floor(Math.random() * 100000)}`;
 
   if (!id || !fallbackUsername) {
     return new Response("Missing required user data", { status: 400 });
@@ -60,47 +60,21 @@ export async function POST(req: Request) {
 
   if (eventType === "user.created") {
     try {
-      const user = await createUser({
+      await createUser({
         clerkId: id,
-        name: `${first_name} ${last_name}`.trim() || fallbackUsername,
         email,
         username: fallbackUsername,
-        picture: image_url,
+        firstName: first_name,
+        lastName: last_name,
+        photo: image_url,
       });
 
-      return NextResponse.json({ message: "User created", user });
+      return new Response("User created successfully", { status: 200 });
     } catch (err) {
+      console.error("Error creating user:", err);
       return new Response("Failed to create user", { status: 500 });
     }
   }
 
-  if (eventType === "user.updated") {
-    try {
-      const updated = await updateUser({
-        clerkId: id,
-        updateData: {
-          name: `${first_name} ${last_name}`.trim() || fallbackUsername,
-          email,
-          username: fallbackUsername,
-          picture: image_url,
-        },
-        path: `/profile/${id}`,
-      });
-
-      return NextResponse.json({ message: "User updated", updated });
-    } catch {
-      return new Response("Failed to update user", { status: 500 });
-    }
-  }
-
-  if (eventType === "user.deleted") {
-    try {
-      const deleted = await deleteUser({ clerkId: id });
-      return NextResponse.json({ message: "User deleted", deleted });
-    } catch {
-      return new Response("Failed to delete user", { status: 500 });
-    }
-  }
-
-  return new Response("Event handled", { status: 200 });
+  return new Response("Event type not handled", { status: 200 });
 }
